@@ -163,6 +163,13 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       }
     }
 
+    // Notify on every captured copy — including re-copies of existing items.
+    if Defaults[.notifyOnCopy] {
+      Task {
+        Notifier.notify(body: item.title, sound: .write)
+      }
+    }
+
     // Remove exceeding items. Do this after the item is added to avoid removing something
     // if a duplicate was found as then the size already stayed the same.
     limitHistorySize(to: Defaults[.size] - 1)

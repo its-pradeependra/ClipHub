@@ -73,16 +73,16 @@ struct ClipHubSettingsRootView: View {
         .padding(.top, 12)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
-        .background(.bar)
+        .background(ClipHubTheme.card)
 
-      Divider().opacity(0.5)
+      Divider().opacity(0.35)
 
       ScrollView {
         content
           .padding(20)
           .frame(maxWidth: .infinity, alignment: .top)
       }
-      .background(Color(nsColor: .underPageBackgroundColor))
+      .background(ClipHubTheme.canvas)
     }
     .frame(width: 900, height: 640)
   }
@@ -185,22 +185,30 @@ struct ClipHubCard<Content: View>: View {
   }
 }
 
+enum ClipHubTheme {
+  /// Window canvas behind the cards: near-white in light mode, deep gray in dark.
+  static let canvas = Color(nsColor: NSColor(name: nil) { appearance in
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      ? NSColor(calibratedRed: 0.086, green: 0.086, blue: 0.094, alpha: 1)
+      : NSColor(calibratedRed: 0.961, green: 0.965, blue: 0.973, alpha: 1)
+  })
+
+  /// Card surface: white in light mode, elevated gray in dark.
+  static let card = Color(nsColor: NSColor(name: nil) { appearance in
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      ? NSColor(calibratedRed: 0.153, green: 0.153, blue: 0.165, alpha: 1)
+      : .white
+  })
+}
+
 extension View {
-  @ViewBuilder
   func clipHubCardStyle(padding: CGFloat = 16) -> some View {
-    let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-    if #available(macOS 26.0, *) {
-      self
-        .padding(padding)
-        .glassEffect(.regular, in: shape)
-        .overlay(shape.strokeBorder(Color.primary.opacity(0.06), lineWidth: 1))
-    } else {
-      self
-        .padding(padding)
-        .background(.background, in: shape)
-        .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
-        .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
-    }
+    let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+    return self
+      .padding(padding)
+      .background(ClipHubTheme.card, in: shape)
+      .overlay(shape.strokeBorder(Color.primary.opacity(0.07), lineWidth: 1))
+      .shadow(color: .black.opacity(0.05), radius: 2.5, y: 1)
   }
 }
 
@@ -292,6 +300,8 @@ struct ClipHubGeneralTab: View {
   @Default(.searchMode) private var searchMode
   @Default(.pasteByDefault) private var pasteByDefault
   @Default(.removeFormattingByDefault) private var removeFormatting
+  @Default(.notifyOnCopy) private var notifyOnCopy
+  @Default(.notifyOnPaste) private var notifyOnPaste
 
   @State private var updater = SoftwareUpdater()
 
@@ -309,6 +319,8 @@ struct ClipHubGeneralTab: View {
         }
       }
     }
+    .frame(maxWidth: 680)
+    .frame(maxWidth: .infinity)
   }
 
   private var startupCard: some View {
@@ -351,23 +363,38 @@ struct ClipHubGeneralTab: View {
   }
 
   private var notificationsCard: some View {
-    Link(destination: notificationsURL) {
-      HStack(spacing: 10) {
-        Image(systemName: "speaker.wave.2")
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(Color.accentColor)
-        Text("Notifications and sounds")
-          .font(.system(size: 13, weight: .medium))
-          .foregroundStyle(Color.accentColor)
-        Spacer()
-        Image(systemName: "chevron.right")
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(.tertiary)
+    ClipHubCard(icon: "bell.badge", title: "Notifications & Sounds") {
+      VStack(alignment: .leading, spacing: 12) {
+        ClipHubToggleRow(
+          "Notify on copy",
+          subtitle: "Notification and sound when a new clip is captured.",
+          isOn: $notifyOnCopy
+        )
+        Divider().opacity(0.5)
+        ClipHubToggleRow(
+          "Notify on paste",
+          subtitle: "Notification and sound when a clip is pasted.",
+          isOn: $notifyOnPaste
+        )
+        Divider().opacity(0.5)
+        Link(destination: notificationsURL) {
+          HStack(spacing: 8) {
+            Image(systemName: "speaker.wave.2")
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundStyle(Color.accentColor)
+            Text("System notification settings…")
+              .font(.system(size: 12, weight: .medium))
+              .foregroundStyle(Color.accentColor)
+            Spacer()
+            Image(systemName: "chevron.right")
+              .font(.system(size: 10, weight: .semibold))
+              .foregroundStyle(.tertiary)
+          }
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
       }
-      .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
-    .clipHubCardStyle(padding: 14)
   }
 
   private var searchCard: some View {
@@ -484,7 +511,7 @@ struct ClipHubStorageTab: View {
 
   private let sizeFormatter: NumberFormatter = {
     let formatter = NumberFormatter()
-    formatter.minimum = 10
+    formatter.minimum = 50
     formatter.maximum = 1000
     return formatter
   }()
@@ -526,7 +553,7 @@ struct ClipHubStorageTab: View {
           TextField("", value: $size, formatter: sizeFormatter)
             .textFieldStyle(.roundedBorder)
             .frame(width: 76)
-          Stepper("", value: $size, in: 10...1000, step: 10)
+          Stepper("", value: $size, in: 50...1000, step: 10)
             .labelsHidden()
           Spacer()
           VStack(alignment: .trailing, spacing: 2) {
@@ -542,13 +569,12 @@ struct ClipHubStorageTab: View {
         Slider(
           value: Binding(
             get: { Double(size) },
-            set: { size = Int($0) }
+            set: { size = Int($0.rounded()) }
           ),
-          in: 10...1000,
-          step: 10
+          in: 50...1000
         )
         HStack {
-          Text("10 items").font(.system(size: 10.5)).foregroundStyle(.secondary)
+          Text("50 items").font(.system(size: 10.5)).foregroundStyle(.secondary)
           Spacer()
           Text("1000 items").font(.system(size: 10.5)).foregroundStyle(.secondary)
         }
@@ -779,45 +805,56 @@ struct ClipHubIgnoreTab: View {
     }
   }
 
+  /// Content height shared by all three columns so the cards line up evenly.
+  private let columnContentHeight: CGFloat = 372
+
   private var applicationsCard: some View {
     ClipHubCard(
       icon: "app.badge.checkmark",
       title: "Ignored Applications",
-      subtitle: "Clipboard content copied from these applications will be ignored.",
-      accessory: AnyView(
-        Button {
-          isAddingApp = true
-        } label: {
-          Label("Add", systemImage: "plus").font(.system(size: 11, weight: .medium))
-        }
-        .controlSize(.small)
-        .fileDialogDefaultDirectory(URL(string: "/Applications"))
-        .fileImporter(isPresented: $isAddingApp, allowedContentTypes: [.application]) { result in
-          if case .success(let url) = result,
-             let bundle = Bundle(path: url.path),
-             let bundleID = bundle.bundleIdentifier,
-             !ignoredApps.contains(bundleID) {
-            ignoredApps.append(bundleID)
-          }
-        }
-      )
+      subtitle: "Clipboard content copied from these applications will be ignored."
     ) {
-      VStack(alignment: .leading, spacing: 0) {
-        if ignoredApps.isEmpty {
-          Text("No ignored applications.")
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
-            .padding(.vertical, 14)
-        } else {
-          ForEach(ignoredApps, id: \.self) { app in
-            appRow(app)
-            if app != ignoredApps.last {
-              Divider().opacity(0.5)
+      VStack(alignment: .leading, spacing: 10) {
+        HStack {
+          Spacer()
+          Button {
+            isAddingApp = true
+          } label: {
+            Label("Add Application", systemImage: "plus").font(.system(size: 11, weight: .medium))
+          }
+          .controlSize(.small)
+          .fixedSize()
+          .fileDialogDefaultDirectory(URL(string: "/Applications"))
+          .fileImporter(isPresented: $isAddingApp, allowedContentTypes: [.application]) { result in
+            if case .success(let url) = result,
+               let bundle = Bundle(path: url.path),
+               let bundleID = bundle.bundleIdentifier,
+               !ignoredApps.contains(bundleID) {
+              ignoredApps.append(bundleID)
             }
           }
         }
 
-        Divider().padding(.vertical, 8)
+        if ignoredApps.isEmpty {
+          Text("No ignored applications yet.")
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, 18)
+        } else {
+          VStack(alignment: .leading, spacing: 0) {
+            ForEach(ignoredApps, id: \.self) { app in
+              appRow(app)
+              if app != ignoredApps.last {
+                Divider().opacity(0.5)
+              }
+            }
+          }
+        }
+
+        Spacer(minLength: 0)
+
+        Divider().opacity(0.5)
 
         Toggle(isOn: $ignoreAllExcept) {
           VStack(alignment: .leading, spacing: 2) {
@@ -830,6 +867,7 @@ struct ClipHubIgnoreTab: View {
         }
         .toggleStyle(.checkbox)
       }
+      .frame(minHeight: columnContentHeight, alignment: .top)
     }
   }
 
@@ -871,7 +909,7 @@ struct ClipHubIgnoreTab: View {
       title: "Pasteboard Types",
       subtitle: "Ignore content of these types."
     ) {
-      VStack(alignment: .leading, spacing: 8) {
+      VStack(alignment: .leading, spacing: 12) {
         ForEach(friendlyTypes) { type in
           Toggle(isOn: Binding(
             get: { ignoredTypes.contains(type.id) },
@@ -884,7 +922,7 @@ struct ClipHubIgnoreTab: View {
           .toggleStyle(.checkbox)
         }
 
-        Spacer(minLength: 8)
+        Spacer(minLength: 0)
 
         HStack(alignment: .top, spacing: 8) {
           Image(systemName: "lightbulb")
@@ -899,6 +937,7 @@ struct ClipHubIgnoreTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
       }
+      .frame(minHeight: columnContentHeight, alignment: .top)
     }
   }
 
@@ -906,49 +945,57 @@ struct ClipHubIgnoreTab: View {
     ClipHubCard(
       icon: "asterisk.circle",
       title: "Regular Expressions",
-      subtitle: "Ignore content that matches these patterns.",
-      accessory: AnyView(
-        Button {
-          if !ignoredRegexps.contains("") { ignoredRegexps.append("") }
-        } label: {
-          Label("Add", systemImage: "plus").font(.system(size: 11, weight: .medium))
-        }
-        .controlSize(.small)
-      )
+      subtitle: "Ignore content that matches these patterns."
     ) {
-      VStack(spacing: 8) {
+      VStack(alignment: .leading, spacing: 10) {
+        HStack {
+          Spacer()
+          Button {
+            if !ignoredRegexps.contains("") { ignoredRegexps.append("") }
+          } label: {
+            Label("Add Pattern", systemImage: "plus").font(.system(size: 11, weight: .medium))
+          }
+          .controlSize(.small)
+          .fixedSize()
+        }
+
         if ignoredRegexps.isEmpty {
-          Text("No patterns. Copied text matching a pattern here is never stored.")
+          Text("No patterns yet.")
             .font(.system(size: 12))
             .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, 18)
         } else {
-          ForEach(Array(ignoredRegexps.enumerated()), id: \.offset) { index, regexp in
-            HStack(spacing: 6) {
-              TextField("pattern", text: Binding(
-                get: { index < ignoredRegexps.count ? ignoredRegexps[index] : "" },
-                set: { newValue in
-                  if index < ignoredRegexps.count { ignoredRegexps[index] = newValue }
-                }
-              ))
-              .textFieldStyle(.roundedBorder)
-              .font(.system(size: 12, design: .monospaced))
+          VStack(spacing: 8) {
+            ForEach(Array(ignoredRegexps.enumerated()), id: \.offset) { index, regexp in
+              HStack(spacing: 6) {
+                TextField("pattern", text: Binding(
+                  get: { index < ignoredRegexps.count ? ignoredRegexps[index] : "" },
+                  set: { newValue in
+                    if index < ignoredRegexps.count { ignoredRegexps[index] = newValue }
+                  }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
 
-              Button {
-                if index < ignoredRegexps.count {
-                  ignoredRegexps.remove(at: index)
+                Button {
+                  if index < ignoredRegexps.count {
+                    ignoredRegexps.remove(at: index)
+                  }
+                } label: {
+                  Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
                 }
-              } label: {
-                Image(systemName: "xmark")
-                  .font(.system(size: 9, weight: .bold))
-                  .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
               }
-              .buttonStyle(.plain)
             }
           }
         }
+
+        Spacer(minLength: 0)
       }
+      .frame(minHeight: columnContentHeight, alignment: .top)
     }
   }
 }

@@ -15,25 +15,24 @@ class Notifier {
   static func notify(body: String?, sound: NSSound?) {
     guard let body else { return }
 
+    // Play the sound immediately — audible feedback should not depend on
+    // notification permission, which can be reset by signature changes.
+    sound?.play()
+
     authorize()
 
     center.getNotificationSettings { settings in
       guard (settings.authorizationStatus == .authorized) ||
             (settings.authorizationStatus == .provisional) else { return }
+      guard settings.alertSetting == .enabled else { return }
 
       let content = UNMutableNotificationContent()
-      if settings.alertSetting == .enabled {
-        content.body = body
-      }
+      content.body = body
 
       let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
       center.add(request) { error in
         if error != nil {
           NSLog("Failed to deliver notification: \(String(describing: error))")
-        } else {
-          if settings.soundSetting == .enabled {
-            sound?.play()
-          }
         }
       }
     }

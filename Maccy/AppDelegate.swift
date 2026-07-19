@@ -92,6 +92,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     migrateUserDefaults()
     disableUnusedGlobalHotkeys()
 
+    // Request permissions upfront so the user grants them at launch
+    // instead of being interrupted during their first paste.
+    Accessibility.promptIfNeeded()
+    Notifier.authorize()
+
     panel = FloatingPanel(
       contentRect: NSRect(origin: .zero, size: Defaults[.windowSize]),
       identifier: Bundle.main.bundleIdentifier ?? "com.pp-dev.ClipHub",
