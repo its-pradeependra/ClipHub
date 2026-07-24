@@ -26,23 +26,19 @@ struct WindowsClipboardView: View {
   var body: some View {
     VStack(spacing: 0) {
       header
-      searchBar
+      if accessibilityGranted {
+        searchBar
+      }
       Divider().opacity(0.35)
 
-      // With items, a compact banner warns without hiding the clips; with an empty
-      // history the permission message becomes the centered state itself.
-      if !accessibilityGranted && !isEmpty {
-        accessibilityBanner
-      }
-
-      if isEmpty {
-        if !accessibilityGranted && appState.history.searchQuery.isEmpty {
-          AccessibilityPermissionState()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-          emptyState
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+      // Without Accessibility nothing can be pasted, so the permission state IS the
+      // popup — no banner stacked over clips that would not work anyway.
+      if !accessibilityGranted {
+        AccessibilityPermissionState()
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else if isEmpty {
+        emptyState
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         ScrollView {
           LazyVStack(spacing: 6) {
@@ -152,37 +148,6 @@ struct WindowsClipboardView: View {
     .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     .padding(.horizontal, 12)
     .padding(.bottom, 8)
-  }
-
-  private var accessibilityBanner: some View {
-    HStack(alignment: .top, spacing: 10) {
-      Image(systemName: "hand.raised.fill")
-        .font(.system(size: 15))
-        .foregroundStyle(.orange)
-      VStack(alignment: .leading, spacing: 2) {
-        Text("Turn on Accessibility to paste")
-          .font(.system(size: 12.5, weight: .semibold))
-        Text("ClipHub needs permission to paste clips into other apps.")
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      Spacer(minLength: 8)
-      Button("Open Settings") {
-        AppState.shared.appDelegate?.panel.close()
-        Accessibility.openSettings()
-      }
-      .controlSize(.small)
-      .buttonStyle(.borderedProminent)
-    }
-    .padding(10)
-    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    .overlay(
-      RoundedRectangle(cornerRadius: 8, style: .continuous)
-        .strokeBorder(Color.orange.opacity(0.25), lineWidth: 1)
-    )
-    .padding(.horizontal, 8)
-    .padding(.top, 8)
   }
 
   private var emptyState: some View {

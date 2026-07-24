@@ -129,20 +129,20 @@ struct Accessibility {
     }
   }
 
-  /// Shows the system Accessibility permission prompt on the first launch ever, which
-  /// also registers ClipHub in the Accessibility list with the toggle off. Later
-  /// untrusted launches (including self-restarts after the user revokes access) stay
-  /// quiet — the app is already listed, and the in-app permission UI does the guiding.
+  /// Requests Accessibility at launch when untrusted. This is what registers ClipHub
+  /// in the Settings list (so the user only flips a toggle, never the "+" picker) and
+  /// it self-heals after a `tccutil reset`. The system only shows the actual dialog
+  /// when no decision is recorded yet — a denied or toggled-off entry stays quiet, and
+  /// the in-app permission UI does the guiding. Our own self-restarts skip the request
+  /// entirely so an intentional revoke never answers back with a prompt.
   static func promptIfNeeded() {
     guard !allowed else {
       return
     }
 
-    let promptShownKey = "accessibilityPromptShown"
-    guard !UserDefaults.standard.bool(forKey: promptShownKey) else {
+    guard !CommandLine.arguments.contains("--cliphub-relaunched") else {
       return
     }
-    UserDefaults.standard.set(true, forKey: promptShownKey)
 
     let options = [
       kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
@@ -166,7 +166,7 @@ struct Accessibility {
     relauncher.executableURL = URL(fileURLWithPath: "/bin/sh")
     relauncher.arguments = [
       "-c",
-      #"for _ in $(seq 1 150); do kill -0 "$0" 2>/dev/null || break; sleep 0.2; done; kill -0 "$0" 2>/dev/null || /usr/bin/open "$1""#,
+      #"for _ in $(seq 1 150); do kill -0 "$0" 2>/dev/null || break; sleep 0.2; done; kill -0 "$0" 2>/dev/null || /usr/bin/open "$1" --args --cliphub-relaunched"#,
       String(ProcessInfo.processInfo.processIdentifier),
       bundlePath
     ]
