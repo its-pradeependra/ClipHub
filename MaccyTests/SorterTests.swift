@@ -1,6 +1,6 @@
 import XCTest
 import Defaults
-@testable import Maccy
+@testable import ClipHub
 
 class SorterTests: XCTestCase {
   let savedPinTo = Defaults[.pinTo]

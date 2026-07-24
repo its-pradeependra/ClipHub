@@ -1,6 +1,6 @@
 import XCTest
 import Defaults
-@testable import Maccy
+@testable import ClipHub
 
 @MainActor
 class HistoryItemDecoratorTests: XCTestCase {
@@ -60,7 +60,7 @@ class HistoryItemDecoratorTests: XCTestCase {
   }
 
   func testImage() {
-    let image = NSImage(named: "StatusBarMenuImage")!
+    let image = NSImage(named: "clipboard.fill")!
     let itemDecorator = historyItemDecorator(image)
     itemDecorator.sizeImages()
     XCTAssertEqual(itemDecorator.title, "")

@@ -10,10 +10,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var statusItem: NSStatusItem = {
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     statusItem.behavior = .removalAllowed
-    statusItem.button?.action = #selector(performStatusItemClick)
     statusItem.button?.image = Defaults[.menuIcon].image
     statusItem.button?.imagePosition = .imageLeft
-    statusItem.button?.target = self
     return statusItem
   }()
 
@@ -36,6 +34,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Bridge FloatingPanel via AppDelegate.
     AppState.shared.appDelegate = self
+
+    // Menu-bar icon shows a menu (Clipboard / Clear / Preferences / About / Quit).
+    // The clipboard popup opens via its menu item or the global shortcut.
+    statusItem.menu = buildStatusMenu()
 
     Clipboard.shared.onNewCopy { History.shared.add($0) }
     Clipboard.shared.start()
@@ -92,10 +94,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     migrateUserDefaults()
     disableUnusedGlobalHotkeys()
 
-    // Request permissions upfront so the user grants them at launch
+    // Request Accessibility upfront so the user grants it at launch
     // instead of being interrupted during their first paste.
     Accessibility.promptIfNeeded()
-    Notifier.authorize()
+    Accessibility.observeChanges()
 
     panel = FloatingPanel(
       contentRect: NSRect(origin: .zero, size: Defaults[.windowSize]),
@@ -108,8 +110,86 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     #if DEBUG
     renderSettingsPreviewsIfRequested()
+    renderPopupPreviewsIfRequested()
     #endif
   }
+
+  #if DEBUG
+  private func renderPopupPreviewsIfRequested() {
+    guard let flagIndex = CommandLine.arguments.firstIndex(of: "--render-popup"),
+          CommandLine.arguments.count > flagIndex + 1 else {
+      return
+    }
+    let dir = URL(fileURLWithPath: CommandLine.arguments[flagIndex + 1])
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+    Task { @MainActor in
+      try? await AppState.shared.history.load()
+      try? await Task.sleep(for: .seconds(1))
+
+      for (suffix, appearanceName) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+        let root = WindowsClipboardPreview()
+          .environment(AppState.shared)
+          .modelContainer(Storage.shared.container)
+        let hosting = NSHostingView(rootView: AnyView(root))
+        hosting.frame = NSRect(x: 0, y: 0, width: 340, height: 500)
+        hosting.appearance = NSAppearance(named: appearanceName)
+
+        let window = NSWindow(
+          contentRect: hosting.frame,
+          styleMask: [.borderless],
+          backing: .buffered,
+          defer: false
+        )
+        window.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+        try? await Task.sleep(for: .milliseconds(300))
+
+        if let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
+          hosting.cacheDisplay(in: hosting.bounds, to: rep)
+          if let data = rep.representation(using: .png, properties: [:]) {
+            try? data.write(to: dir.appendingPathComponent("popup-\(suffix).png"))
+          }
+        }
+
+        // Missing-Accessibility centered state.
+        let permissionRoot = AccessibilityPermissionState()
+          .frame(width: 340, height: 380)
+          .background(Color(nsColor: .windowBackgroundColor))
+        let permissionHost = NSHostingView(rootView: AnyView(permissionRoot))
+        permissionHost.frame = NSRect(x: 0, y: 0, width: 340, height: 380)
+        permissionHost.appearance = NSAppearance(named: appearanceName)
+        let permissionWindow = NSWindow(contentRect: permissionHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        permissionWindow.contentView = permissionHost
+        permissionHost.layoutSubtreeIfNeeded()
+        try? await Task.sleep(for: .milliseconds(200))
+        if let rep = permissionHost.bitmapImageRepForCachingDisplay(in: permissionHost.bounds) {
+          permissionHost.cacheDisplay(in: permissionHost.bounds, to: rep)
+          if let data = rep.representation(using: .png, properties: [:]) {
+            try? data.write(to: dir.appendingPathComponent("permission-\(suffix).png"))
+          }
+        }
+
+        // Revealed-card variant.
+        let revealRoot = WindowsRevealedPreview().modelContainer(Storage.shared.container)
+        let revealHost = NSHostingView(rootView: AnyView(revealRoot))
+        revealHost.frame = NSRect(x: 0, y: 0, width: 356, height: 320)
+        revealHost.appearance = NSAppearance(named: appearanceName)
+        let revealWindow = NSWindow(contentRect: revealHost.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        revealWindow.contentView = revealHost
+        revealHost.layoutSubtreeIfNeeded()
+        try? await Task.sleep(for: .milliseconds(200))
+        if let rep = revealHost.bitmapImageRepForCachingDisplay(in: revealHost.bounds) {
+          revealHost.cacheDisplay(in: revealHost.bounds, to: rep)
+          if let data = rep.representation(using: .png, properties: [:]) {
+            try? data.write(to: dir.appendingPathComponent("reveal-\(suffix).png"))
+          }
+        }
+      }
+      NSApp.terminate(nil)
+    }
+  }
+  #endif
 
   #if DEBUG
   /// Debug-only: `ClipHub --render-settings <dir>` renders every settings tab
@@ -129,7 +209,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .environment(AppState.shared)
             .modelContainer(Storage.shared.container)
           let hosting = NSHostingView(rootView: AnyView(root))
-          hosting.frame = NSRect(x: 0, y: 0, width: 900, height: 640)
+          hosting.frame = NSRect(x: 0, y: 0, width: 720, height: 600)
           hosting.appearance = NSAppearance(named: appearanceName)
 
           let window = NSWindow(
@@ -159,7 +239,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
-    if Defaults[.clearOnQuit] {
+    // "Clear on quit" means the user's quit — not the invisible self-restart
+    // after an Accessibility grant, which must not touch their history.
+    if Defaults[.clearOnQuit] && !Accessibility.isRelaunching {
       AppState.shared.history.clear()
     }
   }
@@ -189,23 +271,59 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // - maxMenuItems
   }
 
-  @objc
-  private func performStatusItemClick() {
-    if let event = NSApp.currentEvent {
-      let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+  @MainActor private func buildStatusMenu() -> NSMenu {
+    let menu = NSMenu()
 
-      if modifierFlags.contains(.option) {
-        Defaults[.ignoreEvents].toggle()
+    let clipboardItem = NSMenuItem(title: "Clipboard", action: #selector(menuOpenClipboard), keyEquivalent: "")
+    clipboardItem.target = self
+    // Show the current global popup shortcut (e.g. ⌘⇧C) next to the item.
+    clipboardItem.setShortcut(for: .popup)
+    menu.addItem(clipboardItem)
 
-        if modifierFlags.contains(.shift) {
-          Defaults[.ignoreOnlyNextEvent] = Defaults[.ignoreEvents]
-        }
+    menu.addItem(.separator())
 
-        return
-      }
-    }
+    let clearItem = NSMenuItem(title: "Clear", action: #selector(menuClear), keyEquivalent: "")
+    clearItem.target = self
+    menu.addItem(clearItem)
 
+    menu.addItem(.separator())
+
+    let prefsItem = NSMenuItem(title: "Preferences…", action: #selector(menuPreferences), keyEquivalent: ",")
+    prefsItem.target = self
+    menu.addItem(prefsItem)
+
+    let aboutItem = NSMenuItem(title: "About ClipHub", action: #selector(menuAbout), keyEquivalent: "")
+    aboutItem.target = self
+    menu.addItem(aboutItem)
+
+    menu.addItem(.separator())
+
+    let quitItem = NSMenuItem(title: "Quit ClipHub", action: #selector(menuQuit), keyEquivalent: "q")
+    quitItem.target = self
+    menu.addItem(quitItem)
+
+    return menu
+  }
+
+  @MainActor @objc private func menuOpenClipboard() {
+    // Open the clipboard popup from the menu-bar menu.
     panel.toggle(height: AppState.shared.popup.height, at: .statusItem)
+  }
+
+  @MainActor @objc private func menuClear() {
+    AppState.shared.history.clear()
+  }
+
+  @MainActor @objc private func menuPreferences() {
+    AppState.shared.openPreferences()
+  }
+
+  @MainActor @objc private func menuAbout() {
+    AppState.shared.openAbout()
+  }
+
+  @MainActor @objc private func menuQuit() {
+    NSApp.terminate(nil)
   }
 
   private func synchronizeMenuIconText() {

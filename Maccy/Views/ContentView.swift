@@ -16,51 +16,21 @@ struct ContentView: View {
         VisualEffectView()
       }
 
-      KeyHandlingView(searchQuery: $appState.history.searchQuery, searchFocused: $searchFocused) {
-        VStack(spacing: 0) {
-          SlideoutView(controller: appState.preview) {
-            HeaderView(
-              controller: appState.preview,
-              searchFocused: $searchFocused
-            )
-
-            VStack(alignment: .leading, spacing: 0) {
-              HistoryListView(
-                searchQuery: $appState.history.searchQuery,
-                searchFocused: $searchFocused
-              )
-
-              FooterView(footer: appState.footer)
-            }
-            .animation(.default.speed(3), value: appState.history.items)
-            .animation(
-              .default.speed(3),
-              value: appState.history.pasteStack?.id
-            )
-            .padding(.horizontal, Popup.horizontalPadding)
-            .onAppear {
-              searchFocused = true
-            }
-            .onMouseMove {
-              appState.navigator.isKeyboardNavigating = false
-            }
-          } slideout: {
-            SlideoutContentView()
-          }
-          .frame(minHeight: 0)
-          .layoutPriority(1)
+      WindowsClipboardView(searchFocused: $searchFocused)
+        .onAppear {
+          searchFocused = true
+          appState.preview.cancelAutoOpen()
+          appState.preview.disableAutoOpen()
         }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .task {
-        try? await appState.history.load()
-      }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task {
+          try? await appState.history.load()
+        }
     }
-    .animation(.easeInOut(duration: 0.2), value: appState.searchVisible)
     .environment(appState)
     .environment(modifierFlags)
     .environment(\.scenePhase, scenePhase)
-    // FloatingPanel is not a scene, so let's implement custom scenePhase..
+    // FloatingPanel is not a scene, so implement custom scenePhase.
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) {
       if let window = $0.object as? NSWindow,
          let bundleIdentifier = Bundle.main.bundleIdentifier,

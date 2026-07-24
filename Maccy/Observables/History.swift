@@ -5,7 +5,6 @@ import Foundation
 import Logging
 import Observation
 import Sauce
-import Settings
 import SwiftData
 
 @Observable
@@ -160,13 +159,6 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       removedItemIndex = all.firstIndex(where: { $0.item == existingHistoryItem })
       if let removedItemIndex {
         all.remove(at: removedItemIndex)
-      }
-    }
-
-    // Notify on every captured copy — including re-copies of existing items.
-    if Defaults[.notifyOnCopy] {
-      Task {
-        Notifier.notify(body: item.title, sound: .write)
       }
     }
 

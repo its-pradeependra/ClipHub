@@ -1,7 +1,6 @@
 import AppKit
 import Defaults
 import Foundation
-import Settings
 import SwiftUI
 
 @Observable

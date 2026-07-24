@@ -71,9 +71,16 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     }
   }
 
+  // Fixed dimensions for the Windows-style popup — it does not grow/shrink with content.
+  static var windowsPopupWidth: CGFloat { 340 }
+  static func windowsFixedHeight(for screen: NSScreen?) -> CGFloat {
+    let visibleHeight = (screen ?? NSScreen.forPopup ?? NSScreen.main)?.visibleFrame.height ?? 700
+    return min(500, visibleHeight - 40)
+  }
+
   func open(height: CGFloat, at popupPosition: PopupPosition = Defaults[.popupPosition]) {
-    let size = Defaults[.windowSize]
-    setContentSize(NSSize(width: min(frame.width, size.width), height: min(height, size.height)))
+    // Fixed-size clipboard popup — never content-driven.
+    setContentSize(NSSize(width: Self.windowsPopupWidth, height: Self.windowsFixedHeight(for: screen)))
     setFrameOrigin(popupPosition.origin(size: frame.size, statusBarButton: statusBarButton))
     orderFrontRegardless()
     makeKey()
@@ -178,11 +185,9 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   }
 
   func windowDidBecomeKey(_ notification: Notification) {
-    AppState.shared.preview.enableAutoOpen()
-
-    if AppState.shared.navigator.leadHistoryItem != nil {
-      AppState.shared.preview.startAutoOpen()
-    }
+    // The clipboard popup is a fixed-size modal with no slideout preview.
+    AppState.shared.preview.cancelAutoOpen()
+    AppState.shared.preview.disableAutoOpen()
   }
 
   func windowDidResignKey(_ notification: Notification) {
