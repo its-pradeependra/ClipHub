@@ -11,7 +11,8 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
   }
 
   static var previewImageSize: NSSize { NSScreen.forPopup?.visibleFrame.size ?? NSSize(width: 2048, height: 1536) }
-  static var thumbnailImageSize: NSSize { NSSize(width: 340, height: Defaults[.imageMaxHeight]) }
+  // Fixed thumbnail cache size — rows are a fixed height and scale the image to fit.
+  static var thumbnailImageSize: NSSize { NSSize(width: 400, height: 96) }
 
   let id = UUID()
 

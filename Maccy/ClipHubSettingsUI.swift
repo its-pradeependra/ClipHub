@@ -72,6 +72,7 @@ struct ClipHubSettingsRootView: View {
   var body: some View {
     VStack(spacing: 0) {
       ClipHubTabBar(selection: $tab)
+        .padding(.horizontal, 12)
         .padding(.top, 12)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
@@ -106,7 +107,7 @@ struct ClipHubTabBar: View {
   @Binding var selection: ClipHubSettingsTab
 
   var body: some View {
-    HStack(spacing: 4) {
+    HStack(spacing: 6) {
       ForEach(ClipHubSettingsTab.allCases) { tab in
         Button {
           selection = tab
@@ -118,7 +119,8 @@ struct ClipHubTabBar: View {
             Text(tab.title)
               .font(.system(size: 11, weight: selection == tab ? .semibold : .regular))
           }
-          .frame(width: 76, height: 50)
+          .frame(maxWidth: .infinity)
+          .frame(height: 50)
           .foregroundStyle(selection == tab ? Color.accentColor : Color.secondary)
           .background {
             if selection == tab {
@@ -168,6 +170,7 @@ struct ClipHubGeneralTab: View {
   @Default(.searchMode) private var searchMode
   @Default(.pasteByDefault) private var pasteByDefault
   @Default(.removeFormattingByDefault) private var removeFormatting
+  @Default(.captureScreenshotFiles) private var captureScreenshotFiles
 
   @State private var updater = SoftwareUpdater()
 
@@ -200,6 +203,14 @@ struct ClipHubGeneralTab: View {
           "Paste without formatting",
           subtitle: "Paste clips as plain text, dropping fonts and colors.",
           isOn: $removeFormatting
+        )
+      }
+
+      Section("Screenshots") {
+        SettingsToggle(
+          "Capture screenshots saved as files",
+          subtitle: "Also add screenshots saved to a file (Cmd+Shift+4) to history, not just ones copied to the clipboard. Needs access to your screenshot folder.",
+          isOn: $captureScreenshotFiles
         )
       }
     }
@@ -300,17 +311,9 @@ struct ClipHubStorageTab: View {
 
 struct ClipHubAppearanceTab: View {
   @Default(.popupPosition) private var popupAt
-  @Default(.imageMaxHeight) private var imageHeight
   @Default(.menuIcon) private var menuIcon
   @Default(.showInStatusBar) private var showInStatusBar
   @Default(.showRecentCopyInMenuBar) private var showRecentCopy
-
-  private let imageHeightFormatter: NumberFormatter = {
-    let formatter = NumberFormatter()
-    formatter.minimum = 20
-    formatter.maximum = 200
-    return formatter
-  }()
 
   var body: some View {
     Form {
@@ -318,16 +321,6 @@ struct ClipHubAppearanceTab: View {
         Picker("Open at", selection: $popupAt) {
           ForEach(PopupPosition.allCases) { position in
             Text(position.description).tag(position)
-          }
-        }
-        LabeledContent("Image preview height") {
-          HStack(spacing: 6) {
-            TextField("", value: $imageHeight, formatter: imageHeightFormatter)
-              .textFieldStyle(.roundedBorder)
-              .frame(width: 56)
-              .multilineTextAlignment(.trailing)
-            Stepper("", value: $imageHeight, in: 20...200, step: 10)
-              .labelsHidden()
           }
         }
       }

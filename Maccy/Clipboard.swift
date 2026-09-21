@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import Defaults
 import Sauce
 
@@ -229,6 +230,22 @@ class Clipboard {
     onNewCopyHooks.forEach({ $0(historyItem) })
   }
 
+  // Ingest an image straight into history (e.g. a screenshot saved to a file)
+  // WITHOUT touching the system clipboard, reusing the normal new-copy path.
+  @MainActor
+  func ingestImage(pngData: Data, source: String) {
+    let content = HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue, value: pngData)
+    let historyItem = HistoryItem(contents: [content])
+
+    if #unavailable(macOS 15.0) {
+      try? History.shared.insertIntoStorage(historyItem)
+    }
+
+    historyItem.application = source
+    historyItem.title = historyItem.generateTitle()
+    onNewCopyHooks.forEach({ $0(historyItem) })
+  }
+
   private func shouldIgnore(_ types: Set<NSPasteboard.PasteboardType>) -> Bool {
     let ignoredTypes = self.ignoredTypes
       .union(Defaults[.ignoredPasteboardTypes].map({ NSPasteboard.PasteboardType($0) }))
@@ -317,5 +334,134 @@ class Clipboard {
     }
 
     return newContents
+  }
+}
+
+// MARK: - Screenshot file watcher
+
+// Screenshots taken WITHOUT the Control modifier are saved as files, never touching
+// the clipboard. This watches the macOS screenshot folder (wherever the user has set
+// it) and feeds new screenshot files into history, so every screenshot is captured.
+final class ScreenshotWatcher {
+  static let shared = ScreenshotWatcher()
+
+  private var source: DispatchSourceFileSystemObject?
+  private var dirFD: Int32 = -1
+  private var watchedPath: String?
+  private var startedAt = Date()
+  private var knownFiles = Set<String>()
+  private var locationTimer: Timer?
+  private let queue = DispatchQueue(label: "com.pp-dev.ClipHub.screenshotwatcher")
+
+  private init() {
+    // Restart if the toggle changes.
+    Task { @MainActor in
+      for await _ in Defaults.updates(.captureScreenshotFiles, initial: false) {
+        self.startIfEnabled()
+      }
+    }
+    // The screenshot save location is a system setting we don't get notified about,
+    // so poll it: pick up a location change (any folder) within a couple of seconds.
+    locationTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated { self?.reconcile() }
+    }
+  }
+
+  @MainActor
+  private func reconcile() {
+    guard Defaults[.captureScreenshotFiles] else {
+      if source != nil { stop() }
+      return
+    }
+    if source == nil || watchedPath != Self.screenshotLocation() {
+      startIfEnabled()
+    }
+  }
+
+  /// The folder macOS saves screenshots to (default ~/Desktop).
+  static func screenshotLocation() -> String {
+    if let loc = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location"),
+       !loc.isEmpty {
+      return (loc as NSString).expandingTildeInPath
+    }
+    return (("~/Desktop") as NSString).expandingTildeInPath
+  }
+
+  private static func namePrefix() -> String {
+    UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "name") ?? "Screenshot"
+  }
+
+  @MainActor
+  func startIfEnabled() {
+    stop()
+    guard Defaults[.captureScreenshotFiles] else { return }
+
+    let path = Self.screenshotLocation()
+    watchedPath = path
+    startedAt = Date()
+
+    // Snapshot existing files (also triggers the folder-access prompt now, if needed),
+    // so only screenshots taken from here on are ingested.
+    knownFiles = Set((try? FileManager.default.contentsOfDirectory(atPath: path)) ?? [])
+
+    let fd = open(path, O_EVTONLY)
+    guard fd >= 0 else { return }
+    dirFD = fd
+
+    let source = DispatchSource.makeFileSystemObjectSource(
+      fileDescriptor: fd, eventMask: .write, queue: queue
+    )
+    source.setEventHandler { [weak self] in self?.scanForNewScreenshots() }
+    source.setCancelHandler { [weak self] in
+      if let fd = self?.dirFD, fd >= 0 { close(fd) }
+      self?.dirFD = -1
+    }
+    self.source = source
+    source.resume()
+  }
+
+  func stop() {
+    source?.cancel()
+    source = nil
+  }
+
+  // The directory changed — find newly added screenshot files and ingest them.
+  private func scanForNewScreenshots() {
+    guard let path = watchedPath,
+          let names = try? FileManager.default.contentsOfDirectory(atPath: path) else { return }
+
+    let current = Set(names)
+    let added = current.subtracting(knownFiles)
+    knownFiles = current
+
+    for name in added {
+      let full = (path as NSString).appendingPathComponent(name)
+      ingestIfScreenshot(full)
+    }
+  }
+
+  private func ingestIfScreenshot(_ path: String) {
+    guard path.lowercased().hasSuffix(".png"),
+          FileManager.default.fileExists(atPath: path),
+          isScreenshot(path),
+          let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+          let modified = attrs[.modificationDate] as? Date,
+          modified >= startedAt.addingTimeInterval(-2) else { return }
+
+    // The file may still be flushing to disk; give it a moment, then ingest.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+      guard let data = FileManager.default.contents(atPath: path) else { return }
+      Clipboard.shared.ingestImage(pngData: data, source: "com.apple.screencapture")
+    }
+  }
+
+  // A real screenshot is tagged by macOS; fall back to the screenshot name prefix
+  // if Spotlight metadata hasn't been written yet.
+  private func isScreenshot(_ path: String) -> Bool {
+    if let item = MDItemCreate(kCFAllocatorDefault, path as CFString),
+       let value = MDItemCopyAttribute(item, "kMDItemIsScreenCapture" as CFString) as? NSNumber {
+      return value.boolValue
+    }
+    return (path as NSString).lastPathComponent.hasPrefix(Self.namePrefix())
   }
 }

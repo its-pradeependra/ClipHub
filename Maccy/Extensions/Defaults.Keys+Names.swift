@@ -11,6 +11,8 @@ struct StorageType {
 }
 
 extension Defaults.Keys {
+  // Watch the macOS screenshot save folder and add saved screenshots to history.
+  static let captureScreenshotFiles = Key<Bool>("captureScreenshotFiles", default: true)
   static let clearOnQuit = Key<Bool>("clearOnQuit", default: false)
   static let clearSystemClipboard = Key<Bool>("clearSystemClipboard", default: false)
   static let clipboardCheckInterval = Key<Double>("clipboardCheckInterval", default: 0.5)
@@ -33,7 +35,6 @@ extension Defaults.Keys {
       "net.antelle.keeweb"
     ])
   )
-  static let imageMaxHeight = Key<Int>("imageMaxHeight", default: 40)
   static let lastReviewRequestedAt = Key<Date>("lastReviewRequestedAt", default: Date.now)
   static let menuIcon = Key<MenuIcon>("menuIcon", default: .clipboard)
   static let migrations = Key<[String: Bool]>("migrations", default: [:])
@@ -57,6 +58,8 @@ extension Defaults.Keys {
   static let sortBy = Key<Sorter.By>("sortBy", default: .lastCopiedAt)
   static let suppressClearAlert = Key<Bool>("suppressClearAlert", default: false)
   static let windowSize = Key<NSSize>("windowSize", default: NSSize(width: 450, height: 800))
+  // Remembered size of the clipboard popup, restored on each open (clamped to min/max).
+  static let windowsPopupSize = Key<NSSize>("windowsPopupSize", default: NSSize(width: 340, height: 500))
   static let windowPosition = Key<NSPoint>("windowPosition", default: NSPoint(x: 0.5, y: 0.8))
   static let showApplicationIcons = Key<Bool>("showApplicationIcons", default: false)
   static let showHexColorSwatch = Key<Bool>("showHexColorSwatch", default: true)

@@ -41,6 +41,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     Clipboard.shared.onNewCopy { History.shared.add($0) }
     Clipboard.shared.start()
+    ScreenshotWatcher.shared.startIfEnabled()
 
     Task {
       for await _ in Defaults.updates(.clipboardCheckInterval, initial: false) {

@@ -1,5 +1,4 @@
 import AppKit
-import Defaults
 import SwiftUI
 
 // MARK: - Windows 11-style clipboard popup (the only clipboard UI)
@@ -63,7 +62,7 @@ struct WindowsClipboardView: View {
           }
           .padding(8)
         }
-        .scrollIndicators(.automatic)
+        .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
@@ -225,6 +224,9 @@ struct WindowsClipCard: View {
   @Binding var revealedID: UUID?
   @State private var hovering = false
 
+  // Every row is exactly this tall; anything longer is truncated to fit.
+  static let rowHeight: CGFloat = 48
+
   private var revealed: Bool { revealedID == item.id }
 
   init(
@@ -261,13 +263,13 @@ struct WindowsClipCard: View {
           Spacer(minLength: 0)
         }
         .padding(.leading, 12)
-        .padding(.trailing, revealed ? 6 : 34)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .padding(.trailing, revealed ? 6 : 36)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .overlay(alignment: .topTrailing) {
+      .overlay(alignment: .trailing) {
         if !revealed { moreButton }
       }
 
@@ -293,7 +295,7 @@ struct WindowsClipCard: View {
       }
     }
     .frame(maxWidth: .infinity)
-    .fixedSize(horizontal: false, vertical: true)
+    .frame(height: Self.rowHeight)
     .background(cardBackground)
     .overlay(
       RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -313,9 +315,10 @@ struct WindowsClipCard: View {
       withAnimation(.easeOut(duration: 0.18)) { revealedID = item.id }
     } label: {
       Image(systemName: "ellipsis")
+        .rotationEffect(.degrees(90))
         .font(.system(size: 12, weight: .bold))
         .foregroundStyle(.secondary)
-        .frame(width: 26, height: 22)
+        .frame(width: 24, height: 30)
         .background(
           RoundedRectangle(cornerRadius: 6)
             .fill(Color.primary.opacity(hovering ? 0.10 : 0.0))
@@ -334,27 +337,26 @@ struct WindowsClipCard: View {
       Image(nsImage: thumb)
         .resizable()
         .scaledToFit()
-        .frame(maxWidth: .infinity, maxHeight: CGFloat(Defaults[.imageMaxHeight]), alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .clipShape(RoundedRectangle(cornerRadius: 5))
     } else if !fileURLs.isEmpty {
-      // Copied file(s) — show Finder-style icon + name with extension.
-      VStack(alignment: .leading, spacing: 4) {
-        ForEach(fileURLs.prefix(3), id: \.self) { url in
-          HStack(spacing: 7) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-              .resizable()
-              .frame(width: 20, height: 20)
-            Text(url.lastPathComponent)
-              .font(.system(size: 12.5))
-              .lineLimit(1)
-              .truncationMode(.middle)
-              .foregroundStyle(.primary)
-          }
-        }
-        if fileURLs.count > 3 {
-          Text("+\(fileURLs.count - 3) more")
-            .font(.system(size: 11))
+      // Copied file(s) — one line: Finder icon + name, with a "+N" badge for the rest.
+      HStack(spacing: 7) {
+        Image(nsImage: NSWorkspace.shared.icon(forFile: fileURLs[0].path))
+          .resizable()
+          .frame(width: 22, height: 22)
+        Text(fileURLs[0].lastPathComponent)
+          .font(.system(size: 12.5))
+          .lineLimit(1)
+          .truncationMode(.middle)
+          .foregroundStyle(.primary)
+        if fileURLs.count > 1 {
+          Text("+\(fileURLs.count - 1)")
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color.primary.opacity(0.08)))
         }
       }
     } else {
@@ -362,8 +364,8 @@ struct WindowsClipCard: View {
         .font(.system(size: 12.5))
         .lineLimit(2)
         .multilineTextAlignment(.leading)
+        .truncationMode(.tail)
         .foregroundStyle(.primary)
-        .fixedSize(horizontal: false, vertical: true)
     }
   }
 

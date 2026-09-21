@@ -71,16 +71,37 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     }
   }
 
-  // Fixed dimensions for the Windows-style popup — it does not grow/shrink with content.
-  static var windowsPopupWidth: CGFloat { 340 }
-  static func windowsFixedHeight(for screen: NSScreen?) -> CGFloat {
-    let visibleHeight = (screen ?? NSScreen.forPopup ?? NSScreen.main)?.visibleFrame.height ?? 700
-    return min(500, visibleHeight - 40)
+  // Resize limits for the clipboard popup: a floor so it can't shrink into
+  // uselessness, and a ceiling of (almost) the visible screen so it can stretch.
+  static var windowsMinSize: NSSize { NSSize(width: 300, height: 340) }
+  static var windowsDefaultSize: NSSize { NSSize(width: 340, height: 500) }
+
+  static func windowsMaxSize(for screen: NSScreen?) -> NSSize {
+    let visible = (screen ?? NSScreen.forPopup ?? NSScreen.main)?.visibleFrame.size
+      ?? NSSize(width: 1200, height: 1400)
+    // A clipboard popup should stay compact — cap it well below full screen,
+    // and only shrink the cap further on small displays.
+    return NSSize(
+      width: max(windowsMinSize.width, min(520, visible.width - 40)),
+      height: max(windowsMinSize.height, min(760, visible.height - 40))
+    )
+  }
+
+  private func clampedPopupSize(_ size: NSSize) -> NSSize {
+    let maxSize = Self.windowsMaxSize(for: screen)
+    return NSSize(
+      width: min(max(size.width, Self.windowsMinSize.width), maxSize.width),
+      height: min(max(size.height, Self.windowsMinSize.height), maxSize.height)
+    )
   }
 
   func open(height: CGFloat, at popupPosition: PopupPosition = Defaults[.popupPosition]) {
-    // Fixed-size clipboard popup — never content-driven.
-    setContentSize(NSSize(width: Self.windowsPopupWidth, height: Self.windowsFixedHeight(for: screen)))
+    // Restore the user's remembered size, clamped to the min/max bounds.
+    let saved = Defaults[.windowsPopupSize]
+    let target = clampedPopupSize(saved == .zero ? Self.windowsDefaultSize : saved)
+    minSize = Self.windowsMinSize
+    maxSize = Self.windowsMaxSize(for: screen)
+    setContentSize(target)
     setFrameOrigin(popupPosition.origin(size: frame.size, statusBarButton: statusBarButton))
     orderFrontRegardless()
     makeKey()
@@ -129,42 +150,10 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   }
 
   func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-    let preview = AppState.shared.preview
-
-    if inLiveResize && preview.resizingMode == .none {
-      let screenPoint = NSEvent.mouseLocation
-      let windowPoint = convertPoint(fromScreen: screenPoint)
-      let location: SlideoutPlacement = windowPoint.x <= frame.width / 2 ? .left : .right
-      if (location == preview.placement) && preview.state == .open {
-        preview.startResize(mode: .slideout)
-      } else {
-        preview.startResize(mode: .content)
-      }
-    }
-
-    var finalFrameSize = frameSize
-    var minContent = preview.minimumContentWidth
-    var minPreview = 0.0
-
-    if inLiveResize && preview.resizingMode != .none {
-      if preview.resizingMode == .content && preview.state == .open {
-        minPreview = preview.slideoutWidth
-      }
-      if preview.resizingMode == .slideout {
-        minPreview = preview.minimumSlideoutWidth
-        minContent = preview.contentWidth
-      }
-    }
-    finalFrameSize.width = max(finalFrameSize.width, minContent + minPreview)
-
-    if !AppState.shared.preview.state.isAnimating {
-      var size = frame.size
-      // Only store the size of the window without the preview
-      size.width = AppState.shared.preview.contentWidth
-      saveWindowFrame(frame: NSRect(origin: frame.origin, size: size))
-    }
-
-    return finalFrameSize
+    // Keep the popup within its min/max bounds and remember the chosen size.
+    let clamped = clampedPopupSize(frameSize)
+    Defaults[.windowsPopupSize] = clamped
+    return clamped
   }
 
   func windowWillMove(_ notification: Notification) {
